@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <script src="https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+</head>
+<body>
+    <img id="myImg0" src="./images/me.jpg" width="350" />
+    <img id="myImg1" src="./images/demo1.jpg" width="350" />
+    <img id="myImg2" src="./images/demo2.jpg" width="350" />
+    <img id="myImg3" src="./images/demo3.jpg" width="350" />
+    <img id="myImg4" src="./images/demo4.jpg" width="350" />
+    <img id="myImg5" src="./images/demo5.jpg" width="350" />
+</body>
+
+<script>
+    init().then(() => {
+        for (let i = 0; i <= 5; i++) {
+            detect(`myImg${i}`);
+        }
+    })
+
+
+    async function init() {
+        await faceapi.loadFaceLandmarkModel('/models');
+    }
+
+    async function detect(imageId) {
+        // await faceapi.loadSsdMobilenetv1Model('./models');
+        const input = document.getElementById(imageId);
+        const landmarks = await faceapi.detectFaceLandmarks(input);
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+
+        let eyeLocations = getEyeLocations(leftEye, rightEye, input.naturalWidth, input.naturalHeight);
+        console.log({imageId, ...eyeLocations})
+    }
+
+    
+
+    function getEyeLocations(leftEye, rightEye, width, height) {
+        // console.log({leftEye, rightEye, width, height})
+        // const leftEyeX = leftEye.map(pos => pos._x).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+        // const rightEyeX = rightEye.map(pos => pos._x).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+        // const leftEyeY = leftEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+        // const rightEyeY = rightEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+        const leftEyeX = Math.max(...leftEye.map(pos => pos._x));
+        const rightEyeX = Math.min(...rightEye.map(pos => pos._x));
+        const leftEyeY = leftEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+        const rightEyeY = rightEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+
+        const leftEyeXRatio = (leftEyeX / width).toFixed(3);
+        const leftEyeYRatio = (leftEyeY / height).toFixed(3);
+        const rightEyeXRatio = (rightEyeX / width).toFixed(3);
+        const rightEyeYRatio = (rightEyeY / height).toFixed(3);
+        // console.log({leftEyeXRatio, leftEyeYRatio, rightEyeXRatio, rightEyeYRatio})
+        return {
+            left: {
+                x: leftEyeXRatio,
+                y: leftEyeYRatio,
+            },
+            right: {
+                x: rightEyeXRatio,
+                y: rightEyeYRatio,
+            },
+        }
+    }
+</script>
+
+</html>

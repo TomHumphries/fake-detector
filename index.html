@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+
+    <title>Face Checker</title>
+
+    <script src="https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  </head>
+  <body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6 py-3">
+                <div class="card text-center" id="card">
+                    <h1 class="display-1 py-5" id="placeholder">Drop a pic. here</h1>
+                    <img id="testImage" class="card-img-top" />
+                    <canvas id="overlay" style="display: none;"></canvas>
+
+                    <div class="card-body text-center" style="display: none;" id="real-person">
+                        <h1>Probably Real</h1>
+                    </div>
+
+                    <div class="card-body text-center" style="display: none;" id="fake-person">
+                        <h1>Possibly Fake</h1>
+                        <p>The positioning of the eyes in this image match the positions used in fake-people images.</p>
+                    </div>
+                    
+                    <div class="card-body text-center" style="display: none;" id="no-person">
+                        <h1>No Person Detected</h1>
+                        <p>The resolution of the image may be too low.</p>
+                    </div>
+                    
+                    <div class="card-body text-center" style="display: none;" id="loading-result">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p>Loading result</p>
+                    </div>
+
+                    <div class="card-footer">
+                        <input id="myFileUpload" class="form-control" type="file" accept=".jpg, .jpeg, .png">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Option 1: Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+
+    <script>
+        init()
+    
+        const placeholder = document.getElementById("placeholder");
+        const cardEl = document.getElementById("card");
+        const canvas = document.getElementById("overlay");
+        const image = document.getElementById("testImage");
+        const fileInput = document.getElementById('myFileUpload');
+
+        const real_person = document.getElementById('real-person');
+        const fake_person = document.getElementById('fake-person');
+        const no_person = document.getElementById('no-person');
+        const loading_result = document.getElementById('loading-result');
+        
+        let imageFile;
+        
+        fileInput.addEventListener('change', onFileInputChanged);
+        cardEl.addEventListener('drop', handleDrop, false)
+        cardEl.addEventListener('dragenter', handlerFunction, false);
+        cardEl.addEventListener('dragleave', handlerFunction, false);
+        cardEl.addEventListener('dragover', handlerFunction, false);
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log({event})
+            let dt = event.dataTransfer;
+            let files = dt.files;
+            fileInput.files = files;
+            onFileInputChanged()
+        }
+
+        function handlerFunction(event) {
+            event.preventDefault()
+            event.stopPropagation()
+        }
+
+        async function init() {
+            await faceapi.loadSsdMobilenetv1Model('/models')
+            await faceapi.loadFaceLandmarkModel('/models');
+        }
+
+        function drop(event) {
+            event.stopPropagation();
+            event.preventDefault(); 
+            console.log({event})
+            var imageUrl = event.dataTransfer.getData('text/html');
+            console.log({imageUrl})
+            // alert(imageUrl);
+        }
+
+        async function onFileInputChanged() {
+            imgFile = fileInput.files[0];
+            processImage();
+        }
+
+        async function processImage() {
+            // create an HTMLImageElement from a Blob
+            placeholder.style.display = "none";
+            const img = await faceapi.bufferToImage(imgFile);
+            document.getElementById('testImage').src = img.src;
+            
+            setIsLoading();
+            hideCanvas();
+            
+            setTimeout(() => {
+                detect();
+            }, 1);
+        }
+    
+        async function detect() {
+            canvas.width = image.width;
+            canvas.height = image.height;
+            // ctx = canvas.getContext("2d");
+            // ctx.fill();
+
+            const displaySize = { width: image.width, height: image.height };
+            const detectionsWithLandmarks = await faceapi
+                .detectSingleFace(image)
+                .withFaceLandmarks();
+            console.log({detectionsWithLandmarks});
+
+            if (!detectionsWithLandmarks) {
+                setNoPerson();
+                return;
+            }
+
+            const resizedResults = faceapi.resizeResults(detectionsWithLandmarks, displaySize);
+            // console.log({resizedResults});
+
+            const leftEye = [...resizedResults.landmarks.getLeftEye()];
+            const rightEye = [...resizedResults.landmarks.getRightEye()];
+            
+            let eyeLocations = getEyeLocations(leftEye, rightEye, image.width, image.height);
+            console.log(`left: ${eyeLocations.left.x.toFixed(3)}, ${eyeLocations.left.y.toFixed(3)}`)
+            console.log(`right: ${eyeLocations.right.x.toFixed(3)}, ${eyeLocations.right.y.toFixed(3)}`)
+
+            faceapi.draw.drawFaceLandmarks(canvas, resizedResults, { drawLines: true });
+
+            // show canvas and fix image
+            showCanvas();
+
+            let isFake = checkLandmarks(eyeLocations);
+            if (isFake) {
+                setIsFake();
+            } else {
+                setIsReal();
+            }
+
+
+    
+        }
+
+        function hideAllResults() {
+            real_person.style.display = "none";
+            fake_person.style.display = "none";
+            no_person.style.display = "none";
+            loading_result.style.display = "none";
+        }
+
+        function hideCanvas() {
+            image.style.position = 'relative';
+            canvas.style.display = 'none';
+            canvas.style.position = 'relative';
+        }
+        function showCanvas() {
+            image.style.position = 'absolute';
+            canvas.style.display = 'block';
+            canvas.style.position = 'relative';
+        }
+        function setIsLoading() {
+            cardEl.className = "card bg-primary text-white";
+            hideAllResults();
+            loading_result.style.display = "block";
+        }
+        function setIsFake() {
+            cardEl.className = "card bg-danger text-white";
+            hideAllResults();
+            fake_person.style.display = "block";
+        }
+        function setIsReal() {
+            cardEl.className = "card bg-success text-white";
+            hideAllResults();
+            real_person.style.display = "block";
+        }
+        function setNoPerson() {
+            cardEl.className = "card bg-warning text-dark";
+            hideAllResults();
+            no_person.style.display = "block";
+        }
+        
+        function checkLandmarks(eyes) {
+            const left_xmin = 0.40;
+            const left_xmax = 0.45;
+            const right_xmin = 0.55;
+            const right_xmax = 0.60;
+            const ymin = 0.45;
+            const ymax = 0.48;
+            if (eyes.left.x < left_xmin) return false;
+            if (eyes.left.x > left_xmax) return false;
+            if (eyes.right.x < right_xmin) return false;
+            if (eyes.right.x > right_xmax) return false;
+            if (eyes.left.y < ymin) return false;
+            if (eyes.left.y > ymax) return false;
+            return true
+        }
+    
+        function getEyeLocations(leftEye, rightEye, width, height) {
+            // console.log({leftEye, rightEye, width, height})
+            // const leftEyeX = leftEye.map(pos => pos._x).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+            // const rightEyeX = rightEye.map(pos => pos._x).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+            // const leftEyeY = leftEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+            // const rightEyeY = rightEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+            const leftEyeX = Math.max(...leftEye.map(pos => pos._x));
+            const rightEyeX = Math.min(...rightEye.map(pos => pos._x));
+            const leftEyeY = leftEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+            const rightEyeY = rightEye.map(pos => pos._y).reduce((acc,v,i,a)=>(acc+v/a.length),0);
+    
+            const leftEyeXRatio = (leftEyeX / width);
+            const leftEyeYRatio = (leftEyeY / height);
+            const rightEyeXRatio = (rightEyeX / width);
+            const rightEyeYRatio = (rightEyeY / height);
+            // console.log({leftEyeXRatio, leftEyeYRatio, rightEyeXRatio, rightEyeYRatio})
+            return {
+                left: {
+                    x: leftEyeXRatio,
+                    y: leftEyeYRatio,
+                },
+                right: {
+                    x: rightEyeXRatio,
+                    y: rightEyeYRatio,
+                },
+            }
+        }
+    </script>
+  </body>
+</html>
